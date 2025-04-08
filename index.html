@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIS Doc Delivery</title>
+    <link rel="stylesheet" href="static/styles.css">
+    <link rel="icon" href="static/images/traffic.png">
+</head>
+<body>
+    <div class="container">
+        <h1 class="heading">FIS Doc Delivery</h1>
+        <img src="static/images/fis.png" alt="logo" class="logo">
+        
+        <div class="input-group">
+            <label for="question">Find the desired document :)</label>
+            <textarea id="question" rows="3" placeholder="Type your question here..."></textarea>
+            <button id="ask-button" onclick="askQuestion()">SUBMIT</button>
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Searching for answers...</p>
+            </div>
+        </div>
+        
+        <div class="error" id="error"></div>
+        
+        <div class="response-area">
+            <div class="suggestion" id="did-you-mean">
+                Did you mean: <span class="suggested-question" id="suggested-question"></span>?
+            </div>
+            
+            <div class="response" id="response">
+                <div class="answer" id="answer"></div>
+                <div class="confidence" id="confidence"></div>
+            </div>
+            
+            <div class="follow-ups" id="follow-ups">
+                <h3>Related questions:</h3>
+                <ul class="follow-up-list" id="follow-up-list"></ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="mario-wrapper">
+        <img class="mario" src="static/images/mario.png">
+        <img class="doc" src="static/images/doc4.png">
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('question').focus();
+            
+            document.getElementById('question').addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    askQuestion();
+                }
+            });
+        });
+        
+        async function askQuestion() {
+            const questionInput = document.getElementById('question');
+            const question = questionInput.value.trim();
+            const askButton = document.getElementById('ask-button');
+            const loadingDiv = document.getElementById('loading');
+            
+            if (!question) {
+                showError("Please enter a question");
+                return;
+            }
+            
+            hideAllResponseElements();
+            askButton.disabled = true;
+            loadingDiv.style.display = 'block';
+            
+            try {
+                const response = await fetch('http://127.0.0.1:5000/ask', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ question: question })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.status === "error") {
+                    showError(data.message || "An error occurred while processing your question");
+                    return;
+                }
+                
+                displayResponse(data);
+                
+            } catch (error) {
+                console.error('Error:', error);
+                showError("Failed to connect to the QA service. Please try again later.");
+            } finally {
+                loadingDiv.style.display = 'none';
+                askButton.disabled = false;
+            }
+        }
+        
+        function hideAllResponseElements() {
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('response').style.display = 'none';
+            document.getElementById('follow-ups').style.display = 'none';
+            document.getElementById('did-you-mean').style.display = 'none';
+        }
+        
+        function displayResponse(data) {
+            const responseDiv = document.getElementById('response');
+            const answerDiv = document.getElementById('answer');
+            const confidenceDiv = document.getElementById('confidence');
+            const didYouMeanDiv = document.getElementById('did-you-mean');
+            const suggestedQuestionSpan = document.getElementById('suggested-question');
+            const followUpDiv = document.getElementById('follow-ups');
+            const followUpList = document.getElementById('follow-up-list');
+            
+            responseDiv.style.display = 'block';
+            
+            if (typeof data.answer === 'string' && data.answer.startsWith('http')) {
+                answerDiv.innerHTML = `<a href="${data.answer}" class="link" target="_blank" rel="noopener noreferrer">${data.answer}</a>`;
+            } else {
+                answerDiv.textContent = data.answer;
+            }
+            
+            switch(data.status) {
+                case "sentiment":
+                    confidenceDiv.textContent = "";
+                    break;
+                    
+                case "did_you_mean":
+                    didYouMeanDiv.style.display = 'block';
+                    suggestedQuestionSpan.textContent = data.suggested_question;
+                    suggestedQuestionSpan.onclick = () => {
+                        document.getElementById('question').value = data.suggested_question;
+                        askQuestion();
+                    };
+                    
+                case "success":
+                    if (data.confidence) {
+                        confidenceDiv.textContent = `Confidence: ${(data.confidence * 100).toFixed(1)}%`;
+                        confidenceDiv.style.display = 'block';
+                    } else {
+                        confidenceDiv.style.display = 'none';
+                    }
+                    break;
+                    
+                case "not_found":
+                    confidenceDiv.textContent = "";
+                    break;
+            }
+            
+            if (data.follow_ups && data.follow_ups.length > 0) {
+                followUpList.innerHTML = '';
+                data.follow_ups.forEach(question => {
+                    const li = document.createElement('li');
+                    li.textContent = question;
+                    li.onclick = () => {
+                        document.getElementById('question').value = question;
+                        document.getElementById('question').focus();
+                        askQuestion();
+                    };
+                    followUpList.appendChild(li);
+                });
+                followUpDiv.style.display = 'block';
+            }
+        }
+        
+        function showError(message) {
+            hideAllResponseElements();
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
